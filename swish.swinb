@@ -1,3 +1,187 @@
 <div class="notebook">
 
+<div class="nb-cell markdown" name="md3">
+Modeling Social Media Users Behavior with Probabilistic Programming - Part 2
+=============================================================================================
+
+In this notebook we translate into Probabilistic Logic Programming the Figaro example from Section 7.3 of [A. Pfeffer, Pratical Probabilistic Programming](https://www.manning.com/books/practical-probabilistic-programming), pages 219-224.
+</div>
+
+<div class="nb-cell markdown" name="md4">
+In this example we will elaborate on the social media model that we created in [figaro_social_media.swinb](figaro_social_media.swinb). Let's write back the basics of our model:
+</div>
+
+<div class="nb-cell program" data-background="true" name="p1">
+:- use_module(library(pita)).
+:- pita.
+:- begin_lpad.
+
+person(amy).
+person(brian).
+person(cheryl).
+
+posted(amy, p1).
+posted(amy, p3).
+posted(brian, p2).
+
+commented(brian, p1, c1).
+commented(cheryl, p1, c2).
+commented(amy, p2, c3).
+commented(cheryl, p3, c4).
+
+interest(_, Topic):uniform(Topic, [sports, politics]).
+
+conn_type(_,_, CT):uniform(CT, [family, close_friend, acquaintance]).
+
+topic(Post, Interest):0.9; topic(Post, Topic):0.1 :- 
+    posted(Poster, Post), 
+    interest(Poster, Interest), 
+    topic_not_interest(Post,Topic).
+topic_not_interest(_, Topic):uniform(Topic, [sports, politics]).
+
+comment_match(Post, Commenter):-
+    topic_match(Post, Commenter).
+
+comment_match(Post, Commenter):0.8 :- 
+    \+ topic_match(Post, Commenter),
+    posted(Poster, Post), 
+    commented(Commenter, Post, _), 
+    conn_type(Poster, Commenter, family).
+comment_match(Post, Commenter):0.5 :- 
+    \+ topic_match(Post, Commenter), 
+    posted(Poster, Post), 
+    commented(Commenter, Post, _), 
+    conn_type(Poster, Commenter, close_friend).
+comment_match(Post, Commenter):0.1 :- 
+    \+ topic_match(Post, Commenter), 
+    posted(Poster, Post), 
+    commented(Commenter, Post, _), 
+    conn_type(Poster, Commenter, acquaintance).
+</div>
+
+<div class="nb-cell markdown" name="md1">
+Elaborating on our model
+------------------------
+Suppose, at any given time, some topics are *hot*, which makes them more likely to be posted. let's assume that a topic is hot with a probability of =0.1=.
+
+We can express this as:
+</div>
+
+<div class="nb-cell program" data-background="true" name="p2">
+is_hot(_):0.1.
+</div>
+
+<div class="nb-cell markdown" name="md2">
+The logic now will be that people will comment on hot topics even if thei're not usually interested in them. So a comment is appropriate if either a topic matches the Commenter's interest or the topic is hot.
+We can express this as:
+</div>
+
+<div class="nb-cell program" data-background="true" name="p3">
+topic_match(Post, Commenter) :- 
+    commented(Commenter, Post, _),
+    topic(Post, Topic),
+    \+is_hot(Topic),
+    interest(Commenter, Topic).
+topic_match(Post, Commenter) :- 
+    commented(Commenter, Post, _), 
+    topic(Post, Topic),
+    is_hot(Topic),
+    \+ interest(Commenter, Topic).
+topic_match(Post, Commenter) :- 
+    commented(Commenter, Post, _), 
+    topic(Post, Topic),
+    is_hot(Topic),
+    interest(Commenter, Topic).
+</div>
+
+<div class="nb-cell markdown" name="md5">
+We can now specify some new evidence:
+</div>
+
+<div class="nb-cell program" data-background="true" name="p4">
+evidence:-
+    cm,
+    topic(p1, politics).
+    
+cm:-
+    comment_match(p2,amy),
+    comment_match(p1,brian),
+    comment_match(p3,cheryl),
+    comment_match(p1,cheryl).
+</div>
+
+<div class="nb-cell markdown" name="md6">
+Results
+-------
+Finally we can answer some queries. Let's start with the interest of people and topics of posts:
+</div>
+
+<div class="nb-cell query" name="q1">
+prob(interest(amy,politics),evidence,P).
+</div>
+
+<div class="nb-cell query" name="q2">
+prob(topic(p2, sports),evidence,P).
+</div>
+
+<div class="nb-cell query" name="q3">
+prob(topic(p3, sports),evidence,P).
+</div>
+
+<div class="nb-cell query" name="q4">
+prob(conn_type(brian, amy, family),evidence,P).
+</div>
+
+<div class="nb-cell markdown" name="md7">
+Now let's observe that the =sports= topic is *hot*, and run the same queries.
+</div>
+
+<div class="nb-cell program" data-background="true" name="p5">
+new_evidence:-
+    cm,
+    topic(p1, politics),
+    is_hot(sports).
+:- end_lpad.
+</div>
+
+<div class="nb-cell query" name="q5">
+prob(interest(amy,politics),new_evidence,P).
+</div>
+
+<div class="nb-cell query" name="q6">
+prob(topic(p2, sports),new_evidence,P).
+</div>
+
+<div class="nb-cell query" name="q7">
+prob(topic(p3, sports),new_evidence,P).
+</div>
+
+<div class="nb-cell query" name="q8">
+prob(conn_type(brian, amy, family),new_evidence,P).
+</div>
+
+<div class="nb-cell markdown" name="md8">
+Note that the probability has increased that post 2's and 3's topics are =sports=. This might be surprising, because the hotness of the topic doesn't enter into the choice of the topic. But, you previously observed that post 1's topic is politics. Amy posted on post 1, so her interest is most likely to be politics. We also know that Brian posted post 2 and Amy commented on it. Because people tend to comment more on topics that match their interests, unless they're hot, we beleived that post 2's topic was politics. But now we know that sports is hot so it cuold well be the case that post 2's topic is sports and the reason that Amy commented on it is because sports is hot, not because she's interested in sports. Similar reasoning holds for post 3.
+Now let's think about why the probability decreased that Amy is Brian's family. We know that Amy is most likely interested in politics. Post 2 has two possibilities: either i'ts about politics, or it's about sports, in which case we need an explanation on why Amy commented on it. Two alternative explanations are that Amy is Brian's family or that sports is hot. Observing that sports is hot provides an explanation that discounts the explanation that Amy is Brian's family, making the probability decrease.
+</div>
+
+<div class="nb-cell markdown" name="md9">
+The new dependency graph will look like this:
+</div>
+
+<div class="nb-cell program" data-background="true" name="p6">
+:- use_rendering(graphviz).
+</div>
+
+<div class="nb-cell query" name="q9">
+X = dot("digraph G { 
+         Person_Interest-&gt;Post_Topic;
+         Person_Interest-&gt;Topic_Match;
+         Topic_hot-&gt;Topic_Match;
+         Post_Topic-&gt;Topic_Match;
+         Topic_Match-&gt;Comment_Match;
+         Conn_Type-&gt;Comment_Match;
+         }").
+</div>
+
 </div>
